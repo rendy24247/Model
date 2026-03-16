@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Subway Run</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@400;600&display=swap');
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000; overflow:hidden; font-family:'Rajdhani',sans-serif; }
+canvas { display:block; }
+#hud { position:fixed; top:0; left:0; right:0; display:flex; justify-content:space-between; padding:18px 26px; pointer-events:none; z-index:20; }
+#score-label, #coins-label { font-size:10px; letter-spacing:.25em; text-transform:uppercase; }
+#score-label { color:rgba(255,255,255,.3); }
+#coins-label { color:rgba(255,220,60,.4); }
+#score { font-family:'Bebas Neue',sans-serif; font-size:50px; color:#fff; line-height:1; }
+#coins { font-family:'Bebas Neue',sans-serif; font-size:40px; color:#ffd83c; line-height:1; }
+#coins-box { text-align:right; }
+#speed-wrap { position:fixed; bottom:26px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:10px; pointer-events:none; z-index:20; }
+#speed-label { font-size:10px; letter-spacing:.2em; color:rgba(255,255,255,.22); text-transform:uppercase; }
+#speed-bar-bg { width:110px; height:2px; background:rgba(255,255,255,.08); border-radius:2px; }
+#speed-bar-fill { height:2px; background:linear-gradient(90deg,#3af,#f3a); border-radius:2px; width:20%; transition:width .3s; }
+.screen { position:fixed; inset:0; z-index:30; display:flex; flex-direction:column; align-items:center; justify-content:center; background:rgba(0,0,0,.85); transition:opacity .4s; }
+.screen.hidden { opacity:0; pointer-events:none; }
+.screen h1 { font-family:'Bebas Neue',sans-serif; font-size:clamp(50px,10vw,92px); color:#fff; letter-spacing:.05em; text-shadow:0 0 60px rgba(80,160,255,.55); margin-bottom:6px; }
+.screen p { font-size:13px; letter-spacing:.18em; color:rgba(255,255,255,.38); text-transform:uppercase; margin-bottom:38px; }
+.btn { padding:13px 46px; font-family:'Bebas Neue',sans-serif; font-size:21px; letter-spacing:.12em; background:transparent; border:1.5px solid rgba(255,255,255,.28); color:#fff; cursor:pointer; border-radius:4px; transition:background .2s,border-color .2s,transform .1s; }
+.btn:hover { background:rgba(255,255,255,.08); border-color:rgba(255,255,255,.55); }
+.btn:active { transform:scale(.97); }
+#over-score { font-family:'Bebas Neue',sans-serif; font-size:26px; color:#ffd83c; letter-spacing:.1em; margin-bottom:4px; }
+#over-best { font-size:11px; letter-spacing:.2em; color:rgba(255,255,255,.28); text-transform:uppercase; margin-bottom:34px; }
+#ctrl-hint { position:fixed; bottom:26px; right:26px; font-size:10px; letter-spacing:.16em; line-height:2; color:rgba(255,255,255,.18); text-transform:uppercase; pointer-events:none; z-index:20; text-align:right; }
+#loader { position:fixed; inset:0; z-index:50; background:#06080f; display:flex; flex-direction:column; align-items:center; justify-content:center; transition:opacity .7s; }
+#loader h2 { font-family:'Bebas Neue',sans-serif; font-size:28px; color:#fff; letter-spacing:.22em; margin-bottom:24px; }
+.model-row { display:flex; align-items:center; gap:12px; margin-bottom:12px; width:260px; }
+.model-name { font-size:10px; letter-spacing:.15em; color:rgba(255,255,255,.4); text-transform:uppercase; width:90px; flex-shrink:0; }
+.bar-bg { flex:1; height:2px; background:rgba(255,255,255,.08); border-radius:2px; }
+.bar-inner { height:2px; border-radius:2px; width:0%; transition:width .1s; }
+.bar-char { background:#3af; } .bar-loco { background:#f80; }
+.bar-car  { background:#4f4; } .bar-track { background:#fc4; }
+.model-tick { font-size:13px; width:16px; text-align:center; color:rgba(255,255,255,.25); }
+</style>
+</head>
+<body>
+
+<div id="loader">
+  <h2>Loading</h2>
+  <div class="model-row"><div class="model-name">Character</div><div class="bar-bg"><div class="bar-inner bar-char" id="b-char"></div></div><div class="model-tick" id="t-char">·</div></div>
+  <div class="model-row"><div class="model-name">Locomotive</div><div class="bar-bg"><div class="bar-inner bar-loco" id="b-loco"></div></div><div class="model-tick" id="t-loco">·</div></div>
+  <div class="model-row"><div class="model-name">Carriage</div><div class="bar-bg"><div class="bar-inner bar-car" id="b-car"></div></div><div class="model-tick" id="t-car">·</div></div>
+  <div class="model-row"><div class="model-name">Track</div><div class="bar-bg"><div class="bar-inner bar-track" id="b-track"></div></div><div class="model-tick" id="t-track">·</div></div>
+</div>
+
+<div id="hud">
+  <div id="score-box"><div id="score-label">Score</div><div id="score">0</div></div>
+  <div id="coins-box"><div id="coins-label">Coins</div><div id="coins">0</div></div>
+</div>
+<div id="speed-wrap">
+  <div id="speed-label">Speed</div>
+  <div id="speed-bar-bg"><div id="speed-bar-fill"></div></div>
+</div>
+<div id="ctrl-hint">Left / Right — lanes<br>Up / Space — jump<br>Down — slide + roll</div>
+
+<div class="screen" id="start-screen">
+  <h1>Subway Run</h1>
+  <p>Dodge trains · Collect coins</p>
+  <button class="btn" id="start-btn">Play</button>
+</div>
+<div class="screen hidden" id="over-screen">
+  <h1>Game Over</h1>
+  <div id="over-score">Score: 0</div>
+  <div id="over-best">Best: 0</div>
+  <button class="btn" id="retry-btn">Try Again</button>
+</div>
+
+<script type="importmap">
+{"imports":{"three":"https://unpkg.com/three@0.158.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.158.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+/* ---- CONFIG ---- */
+const LANES     = [-2.2, 0, 2.2];
+const TILE_LEN  = 24;
+const TILE_COUNT= 10;
+const BASE_SPD  = 10;
+const MAX_SPD   = 30;
+const ACCEL     = 0.005;
+const JUMP_VEL  = 10;
+const GRAVITY   = 24;
+const TRAIN_H   = 4.5;
+const CAR_H     = 4.2;
+
+const CHAR_URL  = 'https://raw.githubusercontent.com/rendy24247/Subvey/refs/heads/main/character.glb';
+const LOCO_URL  = 'https://raw.githubusercontent.com/rendy24247/Subvey/refs/heads/main/train-diesel-box-c.glb';
+const CAR_URL   = 'https://raw.githubusercontent.com/rendy24247/Subvey/refs/heads/main/train-carriage-container-blue.glb';
+const TRACK_URL = 'https://raw.githubusercontent.com/rendy24247/Subvey/refs/heads/main/track-detailed.glb';
+
+/* ---- STATE ---- */
+let state = 'loading';
+let score = 0, coins = 0, best = 0, speed = BASE_SPD;
+let lane = 1, targetX = LANES[1];
+let posY = 0, velY = 0;
+let isJumping = false, isSliding = false, slideTimer = 0;
+// Roll / tumble angle for slide
+let rollAngle = 0;
+
+/* ---- RENDERER ---- */
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+document.body.appendChild(renderer.domElement);
+
+/* ---- SCENE ---- */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x06080f);
+scene.fog = new THREE.Fog(0x06080f, 22, 65);
+
+/* ---- CAMERA ---- */
+const camera = new THREE.PerspectiveCamera(52, innerWidth / innerHeight, 0.1, 200);
+camera.position.set(0, 4, 7);
+camera.lookAt(0, 1, -8);
+
+/* ---- LIGHTS ---- */
+scene.add(new THREE.AmbientLight(0x1a2040, 5));
+const sun = new THREE.DirectionalLight(0xfff5e0, 3.5);
+sun.position.set(4, 14, 8); sun.castShadow = true;
+sun.shadow.mapSize.set(1024, 1024);
+sun.shadow.camera.left = -20; sun.shadow.camera.right = 20;
+sun.shadow.camera.bottom = -20; sun.shadow.camera.top = 20;
+sun.shadow.camera.far = 80; sun.shadow.bias = -0.001;
+scene.add(sun);
+const fill = new THREE.DirectionalLight(0x4466ff, 1.4);
+fill.position.set(-5, 3, -5); scene.add(fill);
+const rim = new THREE.DirectionalLight(0xffffff, 0.5);
+rim.position.set(0, 6, -8); scene.add(rim);
+
+/* ---- TUNNEL WALLS ---- */
+function makeTunnelEnv(z) {
+  const g = new THREE.Group();
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0x0c0e1a, roughness: 0.95 });
+  const lw = new THREE.Mesh(new THREE.BoxGeometry(0.3, 9, TILE_LEN), wallMat);
+  lw.position.set(-7, 3.5, 0); lw.receiveShadow = true; g.add(lw);
+  const rw = lw.clone(); rw.position.set(7, 3.5, 0); g.add(rw);
+  // ceiling lights
+  for (let i = -TILE_LEN / 2 + 2; i < TILE_LEN / 2; i += 4.5) {
+    const m = new THREE.Mesh(
+      new THREE.BoxGeometry(5.5, 0.07, 0.25),
+      new THREE.MeshStandardMaterial({ color: 0x88aaff, emissive: 0x3355cc, emissiveIntensity: 1.6 })
+    );
+    m.position.set(0, 7.2, i); g.add(m);
+  }
+  g.position.z = z;
+  return g;
+}
+
+/* ---- TRACK TILES ---- */
+// 3 separate rails — one per lane
+// Each track tile = clone of track model, narrow, placed at each lane X
+const tiles = [];
+let tileZ = 0;
+let trackTemplate = null;
+
+// Fallback thin floor strip per lane
+const fallbackMat = new THREE.MeshStandardMaterial({ color: 0x2a2e3e, roughness: 0.9 });
+
+function spawnTile() {
+  const zPos = tileZ - TILE_LEN / 2;
+  const tracks = [];
+
+  LANES.forEach(lx => {
+    let tr;
+    if (trackTemplate) {
+      tr = trackTemplate.clone(true);
+      // Scale track: fit TILE_LEN in Z, keep narrow (~1.5 wide) in X
+      const tb = new THREE.Box3().setFromObject(tr);
+      const tsz = tb.getSize(new THREE.Vector3());
+      const scZ = TILE_LEN / tsz.z;
+      const scX = 1.5 / tsz.x;   // narrow per lane
+      const scY = 1.0;
+      tr.scale.set(scX, scY, scZ);
+      const tb2 = new THREE.Box3().setFromObject(tr);
+      tr.position.set(lx, -tb2.min.y, zPos);
+    } else {
+      tr = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.4, TILE_LEN),
+        fallbackMat
+      );
+      tr.rotation.x = -Math.PI / 2;
+      tr.position.set(lx, 0, zPos);
+    }
+    tr.receiveShadow = true;
+    scene.add(tr);
+    tracks.push(tr);
+  });
+
+  const env = makeTunnelEnv(zPos);
+  scene.add(env);
+
+  tiles.push({ tracks, env, z: zPos });
+  tileZ -= TILE_LEN;
+}
+
+/* ---- CHARACTER PIVOT ---- */
+const charPivot = new THREE.Group();
+charPivot.position.set(LANES[1], 0, 0);
+charPivot.rotation.y = Math.PI;
+scene.add(charPivot);
+
+// Inner group for roll animation (rotates on X)
+const charRollGroup = new THREE.Group();
+charPivot.add(charRollGroup);
+
+/* ---- FALLBACK CHARACTER ---- */
+let legL = null, legR = null, armL = null, armR = null;
+
+function makeFallbackChar() {
+  const g = new THREE.Group();
+  const torsoMat = new THREE.MeshStandardMaterial({ color: 0x3366ff });
+  const skinMat  = new THREE.MeshStandardMaterial({ color: 0xffcc88 });
+  const legMat   = new THREE.MeshStandardMaterial({ color: 0x224488 });
+  const shoesMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.34, 0.34), skinMat);
+  head.position.y = 1.75; head.castShadow = true; g.add(head);
+
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.6, 0.28), torsoMat);
+  torso.position.y = 1.22; torso.castShadow = true; g.add(torso);
+
+  armL = new THREE.Group(); armL.position.set(-0.32, 1.38, 0); g.add(armL);
+  const alM = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.5, 0.18), torsoMat);
+  alM.position.y = -0.25; alM.castShadow = true; armL.add(alM);
+
+  armR = new THREE.Group(); armR.position.set(0.32, 1.38, 0); g.add(armR);
+  const arM = alM.clone(); armR.add(arM);
+
+  legL = new THREE.Group(); legL.position.set(-0.14, 0.88, 0); g.add(legL);
+  const llM = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.55, 0.2), legMat);
+  llM.position.y = -0.27; llM.castShadow = true; legL.add(llM);
+  const llS = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.18, 0.28), shoesMat);
+  llS.position.set(0, -0.6, 0.04); legL.add(llS);
+
+  legR = new THREE.Group(); legR.position.set(0.14, 0.88, 0); g.add(legR);
+  const lrM = llM.clone(); lrM.position.y = -0.27; legR.add(lrM);
+  const lrS = llS.clone(); legR.add(lrS);
+
+  return g;
+}
+
+/* ---- ASSETS ---- */
+const assets = { char: null, loco: null, car: null, track: null };
+let charMixer = null, runAction = null, jumpAction = null, slideAction = null, currentAction = null;
+let doneCount = 0;
+const TOTAL = 4;
+const loaderEl = document.getElementById('loader');
+
+function markDone(id) {
+  const el = document.getElementById('t-' + id);
+  el.textContent = '✓'; el.style.color = 'rgba(255,255,255,.7)';
+  doneCount++;
+  if (doneCount === TOTAL) onAllLoaded();
+}
+
+function loadModel(url, id, onDone) {
+  const gl = new GLTFLoader();
+  const barEl = document.getElementById('b-' + id);
+  gl.load(url,
+    gltf => { barEl.style.width = '100%'; onDone(gltf); markDone(id); },
+    xhr  => { if (xhr.lengthComputable) barEl.style.width = (xhr.loaded / xhr.total * 100) + '%'; },
+    err  => { console.warn('err', id, err); barEl.style.background = '#f44'; barEl.style.width = '100%'; onDone(null); markDone(id); }
+  );
+}
+
+loadModel(CHAR_URL, 'char', gltf => {
+  if (!gltf) { assets.char = makeFallbackChar(); return; }
+  const m = gltf.scene;
+  m.traverse(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
+  const box = new THREE.Box3().setFromObject(m);
+  const sz  = box.getSize(new THREE.Vector3());
+  const ct  = box.getCenter(new THREE.Vector3());
+  const sc  = 1.7 / Math.max(sz.x, sz.y, sz.z);
+  m.scale.setScalar(sc);
+  const b2  = new THREE.Box3().setFromObject(m);
+  m.position.set(-ct.x * sc, -b2.min.y, -ct.z * sc);
+  assets.char = m;
+  if (gltf.animations && gltf.animations.length > 0) {
+    charMixer = new THREE.AnimationMixer(m);
+    const anims = gltf.animations;
+    const find = (kw) => anims.find(a => kw.some(k => a.name.toLowerCase().includes(k))) || anims[0];
+    runAction   = charMixer.clipAction(find(['run','walk','jog','move']));
+    jumpAction  = charMixer.clipAction(find(['jump','leap','fall','air']));
+    slideAction = charMixer.clipAction(find(['slide','crouch','duck','roll']));
+    runAction.timeScale = 1.8;
+  }
+});
+
+loadModel(LOCO_URL, 'loco', gltf => {
+  if (!gltf) { assets.loco = makeFallbackTrain(); return; }
+  const m = gltf.scene;
+  m.traverse(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
+  assets.loco = m;
+});
+
+loadModel(CAR_URL, 'car', gltf => {
+  if (!gltf) { assets.car = makeFallbackCar(); return; }
+  const m = gltf.scene;
+  m.traverse(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
+  assets.car = m;
+});
+
+loadModel(TRACK_URL, 'track', gltf => {
+  if (!gltf) { assets.track = null; return; }
+  const m = gltf.scene;
+  m.traverse(c => { if (c.isMesh) { c.receiveShadow = true; c.castShadow = false; } });
+  assets.track = m;
+  trackTemplate = m;
+});
+
+function makeFallbackTrain() {
+  const g = new THREE.Group();
+  const b = new THREE.Mesh(new THREE.BoxGeometry(1.7, 2.4, 4.5),
+    new THREE.MeshStandardMaterial({ color: 0x225588, roughness: 0.6 }));
+  b.position.y = 1.2; b.castShadow = true; g.add(b);
+  return g;
+}
+function makeFallbackCar() {
+  const g = new THREE.Group();
+  const b = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.2, 4.0),
+    new THREE.MeshStandardMaterial({ color: 0x1155aa, roughness: 0.6 }));
+  b.position.y = 1.1; b.castShadow = true; g.add(b);
+  return g;
+}
+
+function setCharAnim(action) {
+  if (!charMixer || !action || action === currentAction) return;
+  if (currentAction) currentAction.fadeOut(0.12);
+  action.reset().fadeIn(0.12).play();
+  currentAction = action;
+}
+
+function onAllLoaded() {
+  if (assets.char) charRollGroup.add(assets.char);
+
+  // Rebuild tiles with track
+  tiles.forEach(t => { t.tracks.forEach(tr => scene.remove(tr)); scene.remove(t.env); });
+  tiles.length = 0;
+  tileZ = 0;
+  for (let i = 0; i < TILE_COUNT; i++) spawnTile();
+
+  loaderEl.style.opacity = '0';
+  setTimeout(() => { loaderEl.style.display = 'none'; }, 650);
+  state = 'start';
+  if (runAction) { runAction.play(); currentAction = runAction; }
+}
+
+// Initial tiles (fallback, overwritten after load)
+for (let i = 0; i < TILE_COUNT; i++) spawnTile();
+
+/* ---- OBSTACLES ---- */
+const obstacles = [];
+const coinMeshes = [];
+
+function scaleModel(src, targetH) {
+  const clone = src.clone(true);
+  const box = new THREE.Box3().setFromObject(clone);
+  const sz  = box.getSize(new THREE.Vector3());
+  const sc  = targetH / Math.max(sz.x, sz.y, sz.z);
+  clone.scale.setScalar(sc);
+  const b2  = new THREE.Box3().setFromObject(clone);
+  clone.position.y = -b2.min.y;
+  return { mesh: clone, w: sz.x * sc, h: sz.y * sc, d: sz.z * sc };
+}
+
+function spawnTrain(z) {
+  const li = Math.floor(Math.random() * 3);
+  const x  = LANES[li];
+  const loco = scaleModel(assets.loco, TRAIN_H);
+  loco.mesh.position.set(x, 0, z);
+  scene.add(loco.mesh);
+  obstacles.push({ mesh: loco.mesh, x, z, hitH: loco.h, hitW: Math.max(loco.w, 1.4), hitD: loco.d });
+
+  let cz = z - loco.d - 0.15;
+  const nCars = 1 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < nCars; i++) {
+    const car = scaleModel(assets.car, CAR_H);
+    car.mesh.position.set(x, 0, cz);
+    scene.add(car.mesh);
+    obstacles.push({ mesh: car.mesh, x, z: cz, hitH: car.h, hitW: Math.max(car.w, 1.4), hitD: car.d });
+    cz -= car.d + 0.1;
+  }
+}
+
+/* ---- COINS ---- */
+const coinGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.08, 16);
+const coinMat = new THREE.MeshStandardMaterial({ color: 0xffd83c, emissive: 0xaa8800, emissiveIntensity: 0.9, metalness: 0.9, roughness: 0.15 });
+
+function spawnCoins(z) {
+  const li  = Math.floor(Math.random() * 3);
+  const x   = LANES[li];
+  const cnt = 3 + Math.floor(Math.random() * 4);
+  for (let i = 0; i < cnt; i++) {
+    const c = new THREE.Mesh(coinGeo, coinMat);
+    c.rotation.x = Math.PI / 2;
+    c.position.set(x, 0.8 + Math.sin(i * 0.8) * 0.25, z - i * 1.2);
+    scene.add(c);
+    coinMeshes.push({ mesh: c, x, z: z - i * 1.2, collected: false });
+  }
+}
+
+/* ---- INPUT ---- */
+window.addEventListener('keydown', e => {
+  if (state !== 'playing') return;
+  if (e.code === 'ArrowLeft'  || e.code === 'KeyA') { if (lane > 0) { lane--; targetX = LANES[lane]; } }
+  if (e.code === 'ArrowRight' || e.code === 'KeyD') { if (lane < 2) { lane++; targetX = LANES[lane]; } }
+  if ((e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Space') && !isJumping) {
+    velY = JUMP_VEL; isJumping = true;
+    setCharAnim(jumpAction);
+  }
+  if ((e.code === 'ArrowDown' || e.code === 'KeyS') && !isSliding) {
+    isSliding = true; slideTimer = 0.65;
+    setCharAnim(slideAction);
+  }
+});
+let tx = 0, ty = 0;
+window.addEventListener('touchstart', e => { tx = e.touches[0].clientX; ty = e.touches[0].clientY; }, { passive: true });
+window.addEventListener('touchend', e => {
+  if (state !== 'playing') return;
+  const dx = e.changedTouches[0].clientX - tx;
+  const dy = e.changedTouches[0].clientY - ty;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    if (dx < -40 && lane > 0) { lane--; targetX = LANES[lane]; }
+    if (dx >  40 && lane < 2) { lane++; targetX = LANES[lane]; }
+  } else {
+    if (dy < -40 && !isJumping) { velY = JUMP_VEL; isJumping = true; setCharAnim(jumpAction); }
+    if (dy >  40 && !isSliding) { isSliding = true; slideTimer = 0.65; setCharAnim(slideAction); }
+  }
+}, { passive: true });
+
+/* ---- UI ---- */
+const scoreEl   = document.getElementById('score');
+const coinsEl   = document.getElementById('coins');
+const speedFill = document.getElementById('speed-bar-fill');
+const startScr  = document.getElementById('start-screen');
+const overScr   = document.getElementById('over-screen');
+document.getElementById('start-btn').onclick = startGame;
+document.getElementById('retry-btn').onclick = startGame;
+
+let nextTrainZ = -50, nextCoinZ = -22;
+
+function startGame() {
+  score = 0; coins = 0; speed = BASE_SPD;
+  lane = 1; targetX = LANES[1]; posY = 0; velY = 0;
+  isJumping = false; isSliding = false; rollAngle = 0;
+  charPivot.position.set(LANES[1], 0, 0);
+  charPivot.scale.set(1, 1, 1);
+  charPivot.rotation.z = 0;
+  charRollGroup.rotation.x = 0;
+
+  obstacles.forEach(o => scene.remove(o.mesh)); obstacles.length = 0;
+  coinMeshes.forEach(c => scene.remove(c.mesh)); coinMeshes.length = 0;
+  tiles.forEach(t => { t.tracks.forEach(tr => scene.remove(tr)); scene.remove(t.env); }); tiles.length = 0;
+  tileZ = 0;
+  for (let i = 0; i < TILE_COUNT; i++) spawnTile();
+
+  nextTrainZ = -50; nextCoinZ = -22;
+  for (let z = -50; z > -TILE_LEN * TILE_COUNT + 15; z -= 22) {
+    if (Math.random() < 0.65) spawnTrain(z - 5);
+    if (Math.random() < 0.75) spawnCoins(z + 4);
+  }
+
+  setCharAnim(runAction);
+  startScr.classList.add('hidden');
+  overScr.classList.add('hidden');
+  state = 'playing';
+}
+
+function gameOver() {
+  state = 'dead';
+  if (score > best) best = score;
+  document.getElementById('over-score').textContent = 'Score: ' + Math.floor(score);
+  document.getElementById('over-best').textContent  = 'Best: '  + Math.floor(best);
+  overScr.classList.remove('hidden');
+}
+
+/* ---- COLLISION ---- */
+function checkCollision() {
+  const px = charPivot.position.x, py = posY;
+  const cw = 0.42, ch = isSliding ? 0.7 : 1.55;
+  for (const o of obstacles) {
+    const dz = charPivot.position.z - o.z;
+    if (dz > 1.2 || dz < -((o.hitD || 3) + 0.6)) continue;
+    if (Math.abs(px - o.x) > cw + o.hitW * 0.42) continue;
+    if (py + ch < 0.1 || py > o.hitH - 0.1) continue;
+    return true;
+  }
+  return false;
+}
+
+function checkCoins() {
+  const px = charPivot.position.x;
+  for (const c of coinMeshes) {
+    if (c.collected) continue;
+    if (Math.abs(charPivot.position.z - c.z) < 0.75 && Math.abs(px - c.x) < 0.65) {
+      c.collected = true; scene.remove(c.mesh); coins++; coinsEl.textContent = coins;
+    }
+  }
+}
+
+/* ---- WORLD ---- */
+function manageWorld(dt) {
+  const mv = speed * dt;
+  tiles.forEach(t => {
+    t.tracks.forEach(tr => { tr.position.z += mv; });
+    t.env.position.z += mv;
+    t.z += mv;
+  });
+  obstacles.forEach(o => { o.mesh.position.z += mv; o.z += mv; });
+  coinMeshes.forEach(c => { if (!c.collected) { c.mesh.position.z += mv; c.z += mv; } });
+
+  const last = tiles[tiles.length - 1];
+  if (last && last.z > -TILE_LEN * (TILE_COUNT - 2)) spawnTile();
+
+  for (let i = tiles.length - 1; i >= 0; i--) {
+    if (tiles[i].z > TILE_LEN * 2) {
+      tiles[i].tracks.forEach(tr => scene.remove(tr));
+      scene.remove(tiles[i].env);
+      tiles.splice(i, 1);
+    }
+  }
+
+  nextTrainZ += mv;
+  if (nextTrainZ > tileZ + TILE_LEN * 2) {
+    spawnTrain(nextTrainZ - mv);
+    nextTrainZ -= 18 + Math.random() * 14;
+  }
+  nextCoinZ += mv;
+  if (nextCoinZ > tileZ + TILE_LEN * 2) {
+    spawnCoins(nextCoinZ - mv);
+    nextCoinZ -= 10 + Math.random() * 8;
+  }
+
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    if (obstacles[i].z > 12) { scene.remove(obstacles[i].mesh); obstacles.splice(i, 1); }
+  }
+  for (let i = coinMeshes.length - 1; i >= 0; i--) {
+    if (coinMeshes[i].z > 12) { if (!coinMeshes[i].collected) scene.remove(coinMeshes[i].mesh); coinMeshes.splice(i, 1); }
+  }
+}
+
+/* ---- RENDER LOOP ---- */
+const clock = new THREE.Clock();
+let camShake = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  if (state === 'playing') {
+    speed = Math.min(MAX_SPD, speed + ACCEL * speed * dt);
+    score += speed * dt * 0.55;
+    scoreEl.textContent = Math.floor(score);
+    speedFill.style.width = ((speed - BASE_SPD) / (MAX_SPD - BASE_SPD) * 80 + 20) + '%';
+
+    // Lane movement + lean
+    charPivot.position.x += (targetX - charPivot.position.x) * 11 * dt;
+    charPivot.rotation.z += ((targetX - charPivot.position.x) * 0.28 - charPivot.rotation.z) * 8 * dt;
+
+    // Jump physics
+    if (isJumping) {
+      velY -= GRAVITY * dt;
+      posY += velY * dt;
+      if (posY <= 0) {
+        posY = 0; velY = 0; isJumping = false;
+        if (!isSliding) setCharAnim(runAction);
+      }
+    }
+    charPivot.position.y = posY;
+
+    // Slide + ROLL/TUMBLE
+    if (isSliding) {
+      slideTimer -= dt;
+      // Spin forward (X axis) — full tumble
+      rollAngle += dt * Math.PI * 4; // 2 full spins per second
+      charRollGroup.rotation.x = rollAngle;
+      charPivot.scale.y += (0.6 - charPivot.scale.y) * 14 * dt;
+      if (slideTimer <= 0) {
+        isSliding = false;
+        // Smoothly return to upright
+      }
+    } else {
+      // Return roll to 0 smoothly
+      rollAngle *= 0.85;
+      charRollGroup.rotation.x += (0 - charRollGroup.rotation.x) * 12 * dt;
+      charPivot.scale.y += (1.0 - charPivot.scale.y) * 10 * dt;
+      if (!isJumping && charMixer && currentAction !== runAction) setCharAnim(runAction);
+    }
+
+    // Skeletal animation update
+    if (charMixer) {
+      charMixer.update(dt);
+    } else {
+      // Procedural run anim
+      const t = clock.elapsedTime;
+      const freq = speed * 0.35;
+      if (legL) legL.rotation.x = Math.sin(t * freq) * 0.7;
+      if (legR) legR.rotation.x = Math.sin(t * freq + Math.PI) * 0.7;
+      if (armL) armL.rotation.x = Math.sin(t * freq + Math.PI) * 0.35;
+      if (armR) armR.rotation.x = Math.sin(t * freq) * 0.35;
+      if (assets.char) assets.char.position.y = Math.abs(Math.sin(t * freq)) * 0.06;
+    }
+
+    coinMeshes.forEach(c => { if (!c.collected) c.mesh.rotation.z += dt * 2.8; });
+
+    if (checkCollision()) { camShake = 10; gameOver(); }
+    checkCoins();
+    manageWorld(dt);
+
+    // Camera follow
+    camera.position.x += (charPivot.position.x * 0.28 - camera.position.x) * 7 * dt;
+    camera.position.y = 4 + (Math.random() - 0.5) * camShake * 0.04;
+    camShake *= 0.82;
+  }
+
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
